@@ -614,6 +614,24 @@ When Pi exposes dialog-capable UI, the adapter advertises form elicitation suppo
 
 URL mode is advertised only in TUI mode. The adapter displays the requesting server, target host, and full URL, and always requires consent before opening the browser. It also handles URL-required tool errors (`-32042`) and completion notifications; after completing the browser interaction, retry the original tool call.
 
+### 固定代理暴露模式
+
+外部系统驱动的 Pi 若需要稳定的模型工具定义，可在启动进程前设置：
+
+```bash
+PI_MCP_TOOL_EXPOSURE=proxy-only pi
+```
+
+也可在 `mcp.json` 的 `settings` 中配置 `"toolExposure": "proxy-only"`。进程环境优先；默认值 `configured` 保留现有行为。选择在扩展启动时固定，修改后需重新加载扩展／进程，非法值会报错而非降级。
+
+固定代理模式下：
+
+- 仅暴露固定的 `mcp` 和配置启用的 `mcpScript`；不注册直接业务工具、搜索激活工具或 `mcp__服务名` namespace 工具。此选择优先于直接工具配置和 `MCP_DIRECT_TOOLS`，不重写原配置。
+- 服务新增、撤销、连接、工具目录变化仍正常工作，但不改变代理描述里的服务名单，因为固定描述不包含名单。用 `mcp({})`、`mcp({server:"名称"})` 或 search／describe 取得当前能力；这些说明作为工具结果进入后续上下文。
+- 本模式不改变凭据、缓存、持久化、连接和释放规则，也不限制其他 Pi 扩展注册工具。
+
+运行时注册回执 `registration.toolExposure` 报告实际选择。事件请求可携带 `requiredToolExposure: "proxy-only"`，模式不符时在注册前拒绝；旧版本缺少回执字段，调用方应明确拒绝，而不是假定已经固定工具列表。
+
 ### Direct Tools
 
 By default, all MCP tools are accessed through the single `mcp` proxy tool. This keeps context small but means the LLM has to discover MCP tools via proxy search. If you want specific tools to show up directly in the agent's tool list — alongside `read`, `bash`, `edit`, etc. — add `directTools` to your config.

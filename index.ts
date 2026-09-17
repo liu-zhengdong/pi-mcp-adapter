@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { McpExtensionState } from "./state.ts";
-import { isServerDisabled, type DirectToolSpec, type McpAdapterOptions, type McpConfig, type PromptMetadata, type ServerEntry } from "./types.ts";
+import { isServerDisabled, resolveMcpToolExposure, type McpToolExposure, type DirectToolSpec, type McpAdapterOptions, type McpConfig, type PromptMetadata, type ServerEntry } from "./types.ts";
 import type { McpOAuthRuntime } from "./mcp-auth-flow.ts";
 import { Type } from "typebox";
 import type { TSchema } from "typebox";
@@ -57,6 +57,8 @@ const INIT_FAILURE_MESSAGE_MAX_CHARS = 1_000;
 const INIT_WAIT_TIMED_OUT: unique symbol = Symbol("init-wait-timed-out");
 
 export interface McpServerRegistration {
+  /** 运行时能力回执；旧实现没有此字段，调用方可据此拒绝不兼容模式。 */
+  readonly toolExposure?: McpToolExposure;
   dispose(): Promise<void>;
 }
 
@@ -74,6 +76,7 @@ export interface McpRuntimeRegistrationRequest {
   version: typeof MCP_RUNTIME_REGISTER_VERSION;
   name: string;
   definition: ServerEntry;
+  requiredToolExposure?: McpToolExposure;
   result?: McpRuntimeRegistrationResult;
 }
 
@@ -317,9 +320,12 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     ? resolveConfiguredClaudePluginMcp(cloneMcpConfig(sessionConfig), process.cwd())
     : loadMcpConfig(earlyConfigPath);
   const earlyCache = loadMetadataCache();
+  // 进程内固定选择：运行中配置或目录变化不应改变模型工具协议。
+  const toolExposure = resolveMcpToolExposure(process.env.PI_MCP_TOOL_EXPOSURE ?? earlyConfig.settings?.toolExposure);
+  const fixedProxy = toolExposure === "proxy-only";
   const envRaw = process.env.MCP_DIRECT_TOOLS;
   const envDirectToolOverride = parseEnvDirectToolOverride(envRaw);
-  const namespaceEnvOverride = resolveNamespaceEnvOverride(envRaw, envDirectToolOverride);
+  const namespaceEnvOverride = fixedProxy ? null : resolveNamespaceEnvOverride(envRaw, envDirectToolOverride);
   const enabledEarlyServers = Object.entries(earlyConfig.mcpServers)
     .filter(([, definition]) => !isServerDisabled(definition));
   const hasStartupServer = enabledEarlyServers.some(([, definition]) =>
@@ -328,7 +334,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     const entry = earlyCache.servers[serverName];
     return entry !== undefined && isServerCacheValid(entry, definition);
   });
-  const hasColdEnvironmentDirectTools = envRaw !== undefined && envRaw !== "__none__"
+  const hasColdEnvironmentDirectTools = !fixedProxy && envRaw !== undefined && envRaw !== "__none__"
     && getMissingConfiguredDirectToolServers(earlyConfig, earlyCache, envDirectToolOverride).length > 0;
   const deferSessionRuntime = !hasStartupServer && hasUsableCachedMetadata && !hasColdEnvironmentDirectTools;
   const registeredDirectTools = new Map<string, string>();
@@ -480,7 +486,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
   }
 
   function resolveCurrentDirectTools(config: McpConfig, cache: MetadataCache | null, reservedNames?: Set<string>): DirectToolSpec[] {
-    if (envRaw === "__none__") return [];
+    if (fixedProxy || envRaw === "__none__") return [];
     const prefix = config.settings?.toolPrefix ?? "server";
     return resolveDirectTools(config, cache, prefix, envDirectToolOverride, activeFailureServers(), reservedNames);
   }
@@ -635,6 +641,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     reservedDirectNames: Set<string> = new Set(registeredDirectTools.keys()),
     activeDirectNames: Set<string> = new Set(registeredDirectTools.keys()),
   ): void {
+    if (fixedProxy) return;
     const result = syncNamespaceProxyTools({
       config,
       cache,
@@ -723,6 +730,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     }
     let disposed = false;
     return {
+      toolExposure,
       dispose: async (): Promise<void> => {
         if (disposed) return;
         disposed = true;
@@ -776,6 +784,10 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
       return;
     }
     try {
+      if (request.requiredToolExposure !== undefined
+        && resolveMcpToolExposure(request.requiredToolExposure) !== toolExposure) {
+        throw new Error(`MCP runtime tool exposure is ${toolExposure}; requested ${request.requiredToolExposure}`);
+      }
       request.result = { ok: true, registration: registerRuntimeServer(request.name, request.definition) };
     } catch (error) {
       request.result = { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
@@ -1850,7 +1862,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
   }
 
   function syncProxyTool(config: McpConfig, cache: MetadataCache | null, directSpecs: DirectToolSpec[]): void {
-    const missingConfiguredDirectToolServers = getMissingConfiguredDirectToolServers(
+    const missingConfiguredDirectToolServers = fixedProxy ? [] : getMissingConfiguredDirectToolServers(
       config,
       cache,
       envRaw === undefined || envRaw === "__none__" ? undefined : envDirectToolOverride,
@@ -1860,13 +1872,14 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     // able to activate one. Keep it whenever any spec depends on it.
     const hasSearchModeSpecs = directSpecs.some((spec) => spec.lazy === true);
     const shouldRegisterProxyTool =
-      config.settings?.disableProxyTool !== true
+      fixedProxy
+      || config.settings?.disableProxyTool !== true
       || directSpecs.length === 0
       || hasSearchModeSpecs
       || missingConfiguredDirectToolServers.length > 0;
 
     if (shouldRegisterProxyTool) {
-      const description = buildProxyDescription(config);
+      const description = buildProxyDescription(config, toolExposure);
       if (!proxyToolRegistered || proxyToolDescription !== description) {
         finalizationRegistrations?.add("mcp");
         registerProxyTool(description);

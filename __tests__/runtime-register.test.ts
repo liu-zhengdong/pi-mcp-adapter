@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   initializeMcp: vi.fn(),
@@ -185,6 +185,7 @@ async function settle(): Promise<void> {
 }
 
 describe("runtime MCP server registration", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetModules();
     for (const value of Object.values(mocks)) {
@@ -202,6 +203,57 @@ describe("runtime MCP server registration", () => {
     mocks.resolveDirectTools.mockReturnValue([]);
     mocks.getConfigPathFromArgv.mockReturnValue(undefined);
     mocks.truncateAtWord.mockImplementation((text: string) => text);
+  });
+
+  it("固定代理模式覆盖直接工具选择，注册和撤销不改变工具定义", async () => {
+    vi.stubEnv("PI_MCP_TOOL_EXPOSURE", "proxy-only");
+    vi.stubEnv("MCP_DIRECT_TOOLS", "existing");
+    const state = createState();
+    state.config.mcpServers.existing = { url: "https://existing.test/mcp", directTools: true };
+    mocks.loadMcpConfig.mockReturnValue({ mcpServers: state.config.mcpServers });
+    mocks.initializeMcp.mockResolvedValue(state);
+    const { default: mcpAdapter, registerMcpServer } = await import("../index.ts");
+    const { api, handlers } = createPi();
+    mcpAdapter(api);
+    await handlers.get("session_start")?.({}, {});
+    await settle();
+    const initial = api.registerTool.mock.calls.map(([tool]: [{ name: string }]) => tool.name);
+    expect(initial).toContain("mcp");
+    expect(initial.every((name: string) => name === "mcp" || name === "mcpScript")).toBe(true);
+    const count = api.registerTool.mock.calls.length;
+    const registration = registerMcpServer({ pi: api, name: "late", definition: { url: "https://late.test/mcp", directTools: true } });
+    expect(registration.toolExposure).toBe("proxy-only");
+    expect(state.config.mcpServers.existing).toMatchObject({ directTools: true });
+    expect(state.config.mcpServers.late).toBeDefined();
+    await registration.dispose();
+    expect(state.config.mcpServers.late).toBeUndefined();
+    expect(api.registerTool).toHaveBeenCalledTimes(count);
+    expect(mocks.resolveDirectTools).not.toHaveBeenCalled();
+    expect(mocks.buildProxyDescription).toHaveBeenLastCalledWith(state.config, "proxy-only");
+  });
+
+  it("默认模式拒绝必须固定代理的请求，且不注册服务", async () => {
+    const state = createState();
+    mocks.initializeMcp.mockResolvedValue(state);
+    const { default: mcpAdapter, MCP_RUNTIME_REGISTER_EVENT } = await import("../index.ts");
+    const { api, handlers } = createPi();
+    mcpAdapter(api);
+    await handlers.get("session_start")?.({}, {});
+    await settle();
+    const request: import("../index.ts").McpRuntimeRegistrationRequest = {
+      version: 1, name: "rejected", requiredToolExposure: "proxy-only", definition: { url: "https://example.test/mcp" },
+    };
+    api.events.emit(MCP_RUNTIME_REGISTER_EVENT, request);
+    expect(request.result).toMatchObject({ ok: false, error: expect.objectContaining({ message: expect.stringContaining("requested proxy-only") }) });
+    expect(state.config.mcpServers.rejected).toBeUndefined();
+  });
+
+  it("非法暴露模式在创建工具前失败", async () => {
+    vi.stubEnv("PI_MCP_TOOL_EXPOSURE", "proxy-only-typo");
+    const { default: mcpAdapter } = await import("../index.ts");
+    const { api } = createPi();
+    expect(() => mcpAdapter(api)).toThrow("toolExposure");
+    expect(api.registerTool).not.toHaveBeenCalled();
   });
 
   it("throws when no adapter is installed for the Pi instance", async () => {
