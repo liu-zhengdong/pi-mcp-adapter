@@ -8,6 +8,20 @@
 
 https://github.com/user-attachments/assets/4b7c66ff-e27e-4639-b195-22c3db406a5a
 
+## 上游同步
+
+GitHub Actions 每 6 小时检查 `nicobailon/pi-mcp-adapter` 的最新稳定 GitHub Release，发现尚未包含的提交后创建草稿 PR。不会自动合入、发布 npm 或替换安装。
+
+审阅差异、解决冲突后，点击 **Ready for review** 触发 CI，再决定合入。每个 tag 使用独立分支；已关闭的 PR 不重复创建，用户修改过的分支不被强推。仅 npm 发版但未创建 GitHub Release 的更新不在检测范围内。
+
+手动检查：Actions → **上游版本同步** → **Run workflow**，默认 `dry_run=true`；取消勾选才会创建分支和 PR。
+
+```bash
+gh workflow run upstream-sync.yml -R liu-zhengdong/pi-mcp-adapter --ref main -f dry_run=true
+```
+
+仓库需启用 Actions，并允许 GitHub Actions 创建 PR（设置项同时包含审批权限，但本流程不审批）。仅使用仓库 `GITHUB_TOKEN`，不需要个人 token。GitHub 对长期无活动的公共仓库可能停用定时工作流，届时需重新启用。
+
 ## Why This Exists
 
 Mario wrote about [why you might not need MCP](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/). The problem: tool definitions are verbose. A single MCP server can burn 10k+ tokens, and you're paying that cost whether you use those tools or not. Connect a few servers and you've burned half your context window before the conversation starts.
