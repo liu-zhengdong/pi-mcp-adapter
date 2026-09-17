@@ -5,14 +5,33 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { tmpdir } from "node:os";
 
+function packedFilename(output) {
+  // npm 11 返回数组，npm 12 按包名返回对象；两种格式都只接受本包的一份产物。
+  const records = Array.isArray(output) ? output : Object.values(output ?? {});
+  assert.equal(records.length, 1);
+  const info = records[0];
+  assert.equal(info?.name, "@liuser/pi-mcp-adapter");
+  assert.equal(typeof info?.filename, "string");
+  assert.match(info.filename, /^[a-zA-Z0-9][a-zA-Z0-9._-]*\.tgz$/);
+  return info.filename;
+}
+
+test("兼容 npm pack 输出，拒绝错误包名、数量和越界路径", () => {
+  const info = { name: "@liuser/pi-mcp-adapter", filename: "liuser-pi-mcp-adapter-2.34.1.tgz" };
+  assert.equal(packedFilename([info]), info.filename);
+  assert.equal(packedFilename({ [info.name]: info }), info.filename);
+  for (const bad of [[], [info, info], [{ ...info, name: "pi-mcp-adapter" }], [{ ...info, filename: "../outside.tgz" }], null])
+    assert.throws(() => packedFilename(bad));
+});
+
 async function extractPackedPackage(fixtureRoot) {
-  const packed = spawnSync("npm", ["pack", "--json", "--pack-destination", fixtureRoot], {
+  const packed = spawnSync("npm", ["pack", "--json", "--silent", "--pack-destination", fixtureRoot], {
     cwd: process.cwd(),
     encoding: "utf8"
   });
   assert.equal(packed.status, 0, `${packed.stdout}\n${packed.stderr}`);
-  const tarball = path.join(fixtureRoot, JSON.parse(packed.stdout)[0].filename);
-  const packageRoot = path.join(fixtureRoot, "node_modules", "pi-mcp-adapter");
+  const tarball = path.join(fixtureRoot, packedFilename(JSON.parse(packed.stdout)));
+  const packageRoot = path.join(fixtureRoot, "node_modules", "@liuser", "pi-mcp-adapter");
   await mkdir(packageRoot, { recursive: true });
   const extracted = spawnSync("tar", ["-xzf", tarball, "-C", packageRoot, "--strip-components=1"], {
     encoding: "utf8"
@@ -29,9 +48,9 @@ test("public metadata, config, and type helpers load in plain Node from node_mod
       "--input-type=module",
       "--eval",
       [
-        'const metadata = await import("pi-mcp-adapter/metadata-cache");',
-        'const config = await import("pi-mcp-adapter/config");',
-        'const types = await import("pi-mcp-adapter/types");',
+        'const metadata = await import("@liuser/pi-mcp-adapter/metadata-cache");',
+        'const config = await import("@liuser/pi-mcp-adapter/config");',
+        'const types = await import("@liuser/pi-mcp-adapter/types");',
         'if (typeof metadata.isServerCacheValid !== "function") process.exit(2);',
         'if (typeof types.formatToolName !== "function") process.exit(3);',
         'if (typeof config.loadMcpConfig !== "function") process.exit(4);'
@@ -60,7 +79,7 @@ test("token CLI avoids package-local TypeScript imports under node_modules", asy
       "--input-type=module",
       "--eval",
       [
-        'const { main } = await import("./node_modules/pi-mcp-adapter/cli.js");',
+        'const { main } = await import("./node_modules/@liuser/pi-mcp-adapter/cli.js");',
         'const { Readable } = await import("node:stream");',
         'const run = (args, input = "") => { const logs = []; const errors = []; return main(args, line => logs.push(line), line => errors.push(line), Readable.from([input])).then(code => ({ code, logs, errors })); };',
         'const set = await run(["token", "set", "remote"], "secret-token\\n");',
