@@ -1,5 +1,5 @@
 import { Check, Errors } from "typebox/value";
-import type { DirectToolSpec, McpConfig, ToolPrefix } from "./types.ts";
+import type { DirectToolSpec, McpConfig, McpToolExposure, ToolPrefix } from "./types.ts";
 import { createToolSelectorCandidateIndex, formatToolName, getToolNameCandidates, isServerDisabled, isToolAllowed, resolveToolPrefix } from "./types.ts";
 import type { MetadataCache } from "./metadata-cache.ts";
 import { isServerCacheValid, parseDirectToolSelectors } from "./metadata-cache.ts";
@@ -205,10 +205,10 @@ export function resolveDirectTools(
  * Live counts/status belong to `mcp({ })`, full instructions to
  * `mcp({ instructions })`.
  */
-export function buildProxyDescription(config: McpConfig): string {
+export function buildProxyDescription(config: McpConfig, exposure: McpToolExposure = config.settings?.toolExposure ?? "configured"): string {
   let desc = `MCP gateway — URL installation, server status, tool search/describe, auth, and single MCP tool calls. When a user supplies an MCP endpoint URL, install it with the install action. When one request needs several MCP calls with logic between them, use mcpScript. Non-MCP Pi tools should be called directly, not through mcp.\n`;
 
-  const serverNames = Object.keys(config.mcpServers)
+  const serverNames = exposure === "proxy-only" ? [] : Object.keys(config.mcpServers)
     .filter((serverName) => !isServerDisabled(config.mcpServers[serverName]));
   if (serverNames.length > 0) {
     desc += `\nServers: ${serverNames.join(", ")}\n`;
@@ -225,7 +225,7 @@ export function buildProxyDescription(config: McpConfig): string {
     desc += `\nSearch-mode servers (${searchModeServers.join(", ")}): their tools become real, schema-backed tools the first time mcp({ search }) matches them — after that, call them directly by name.\n`;
   }
 
-  const disabledServers = Object.entries(config.mcpServers)
+  const disabledServers = (exposure === "proxy-only" ? [] : Object.entries(config.mcpServers))
     .filter(([, definition]) => isServerDisabled(definition))
     .map(([serverName]) => serverName);
   if (disabledServers.length > 0) {

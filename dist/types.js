@@ -96,6 +96,14 @@ function encodeServerNamespace(name) {
     }).join("");
 }
 export const MCP_TOOL_APPROVAL_REQUEST_EVENT = "pi-mcp-adapter:tool-approval-request";
+/** 在启动边界解析暴露模式；不接受拼写错误导致的静默降级。 */
+export function resolveMcpToolExposure(value) {
+    if (value === undefined || value === "configured")
+        return "configured";
+    if (value === "proxy-only")
+        return "proxy-only";
+    throw new Error('MCP toolExposure 必须是 "configured" 或 "proxy-only"');
+}
 /**
  * Get server prefix based on tool prefix mode.
  */

@@ -370,7 +370,12 @@ export interface McpToolApprovalRequest {
     signal?: AbortSignal;
     claim(handler: McpToolApprovalHandler): boolean;
 }
+export type McpToolExposure = "configured" | "proxy-only";
+/** 在启动边界解析暴露模式；不接受拼写错误导致的静默降级。 */
+export declare function resolveMcpToolExposure(value: unknown): McpToolExposure;
 export interface McpSettings {
+    /** 固定代理模式保持 MCP 工具定义稳定；进程环境 PI_MCP_TOOL_EXPOSURE 优先。 */
+    toolExposure?: McpToolExposure;
     toolPrefix?: ToolPrefix;
     /** Show the plug prefix in MCP status and connection text (default: true). Set to false to disable it. */
     showStatusIcon?: boolean;
