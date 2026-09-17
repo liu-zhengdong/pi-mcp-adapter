@@ -4,7 +4,7 @@
 
 # Pi MCP Adapter
 
-Use MCP servers with [Pi](https://github.com/badlogic/pi-mono/) without burning your context window.
+本 fork 发布为 `@liuser/pi-mcp-adapter`，在 [Nico Bailon 的原项目](https://github.com/nicobailon/pi-mcp-adapter) 基础上增加固定代理模式，配合 `@liuser/pi-acp` 接入外部工具。保留原作者与 MIT 署名；CLI 和跨扩展事件名保持兼容。
 
 https://github.com/user-attachments/assets/4b7c66ff-e27e-4639-b195-22c3db406a5a
 
@@ -19,10 +19,10 @@ But the MCP ecosystem has useful stuff - databases, browsers, APIs. This adapter
 ## Install
 
 ```bash
-pi install npm:pi-mcp-adapter
+pi install npm:@liuser/pi-mcp-adapter
 ```
 
-Restart Pi after installation.
+安装后重启 Pi 或执行 `/reload`。已有上游无作用域包时，先执行 `pi remove npm:pi-mcp-adapter`，再安装本包，避免同时加载两份 adapter；原 MCP 配置与认证继续使用。
 
 > **DeepSeek Harness (third-party bridge):** Run the unmodified adapter in DSH via [pi2dsh](https://github.com/weijiafu14/pi2dsh); see the [verified dsh-TUI and Web MCP guide](https://github.com/weijiafu14/pi2dsh/tree/main/examples/tui-mcp).
 
@@ -214,7 +214,7 @@ export default function pluginHost(pi) {
 }
 ```
 
-Cross-extension registration uses Pi's shared event bus and does not require a runtime import from `pi-mcp-adapter`. Emit during `session_start` or later so the adapter listener is installed. The adapter writes `request.result` synchronously; the first adapter listener to respond wins.
+Cross-extension registration uses Pi's shared event bus and does not require a runtime import from `@liuser/pi-mcp-adapter`. Emit during `session_start` or later so the adapter listener is installed. The adapter writes `request.result` synchronously; the first adapter listener to respond wins.
 
 Runtime registrations are session scoped and never written to config files. Duplicate server names fail closed against configured servers and other registrations. Registered servers use the normal lazy connection, OAuth, approval, and shutdown behavior, but they are proxy-tool-only and their tools become visible at the next tool sync. To change a definition, dispose the registration and register again.
 
@@ -223,7 +223,7 @@ Runtime registrations are session scoped and never written to config files. Dupl
 Use `createMcpAdapter` when an SDK or server integration already owns its MCP configuration:
 
 ```ts
-import { createMcpAdapter } from "pi-mcp-adapter";
+import { createMcpAdapter } from "@liuser/pi-mcp-adapter";
 
 const extension = createMcpAdapter({
   config: {
@@ -245,10 +245,10 @@ A supplied `config` is a complete, isolated snapshot. It is not merged with file
 
 With `configPath` and no `config`, the adapter keeps normal file merge behavior, and that path takes precedence over argv and `--mcp-config`. The default export keeps the normal file-based behavior. OAuth credentials are stored in the operating system credential store and keyed by the configured server name; URL binding prevents credentials from being accepted for a different server URL. `settings.oauthDir` and `MCP_OAUTH_DIR` are used only as legacy plaintext import locations for older `tokens.json` files, not as credential namespaces. CSRF state and PKCE verifiers are flow-local, so concurrent authorization flows do not share transient secrets.
 
-Cooperating Pi extensions can use `pi-mcp-adapter/oauth` to reuse URL-bound OAuth tokens without deep-importing private files:
+Cooperating Pi extensions can use `@liuser/pi-mcp-adapter/oauth` to reuse URL-bound OAuth tokens without deep-importing private files:
 
 ```ts
-import { getMcpOAuthTokensForUrl, updateMcpOAuthTokensForUrl } from "pi-mcp-adapter/oauth";
+import { getMcpOAuthTokensForUrl, updateMcpOAuthTokensForUrl } from "@liuser/pi-mcp-adapter/oauth";
 
 const tokens = await getMcpOAuthTokensForUrl("jira", "https://jira.example.com/mcp");
 await updateMcpOAuthTokensForUrl("jira", "https://jira.example.com/mcp", { accessToken: "..." });
@@ -261,7 +261,7 @@ The public subpath exposes only token read/update helpers plus a status helper. 
 Extensions can subscribe to the adapter's versioned shared event-bus channel instead of parsing `/mcp` or `mcp({})` output:
 
 ```ts
-import { MCP_STATUS_EVENT, type McpStatusSnapshot } from "pi-mcp-adapter";
+import { MCP_STATUS_EVENT, type McpStatusSnapshot } from "@liuser/pi-mcp-adapter";
 
 pi.events.on(MCP_STATUS_EVENT, (snapshot) => {
   const status = snapshot as McpStatusSnapshot;
@@ -530,7 +530,7 @@ Permission extensions can broker these decisions by listening on `pi-mcp-adapter
 import {
   MCP_TOOL_APPROVAL_REQUEST_EVENT,
   type McpToolApprovalRequest,
-} from "pi-mcp-adapter";
+} from "@liuser/pi-mcp-adapter";
 
 pi.events.on(MCP_TOOL_APPROVAL_REQUEST_EVENT, (request: McpToolApprovalRequest) => {
   request.claim(async () => {

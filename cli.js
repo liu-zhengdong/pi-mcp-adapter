@@ -68,7 +68,7 @@ const IMPORT_PATHS = {
 function printHelp(log = console.log) {
   log("pi-mcp-adapter helper\n");
   log("Install the package with:");
-  log("  pi install npm:pi-mcp-adapter\n");
+  log("  pi install npm:@liuser/pi-mcp-adapter\n");
   log("Then optionally run:");
   log("  pi-mcp-adapter init       Detect host configs and scaffold Pi imports");
   log("  pi-mcp-adapter init --dry-run");
@@ -366,7 +366,7 @@ export async function main(argv = process.argv.slice(2), log = console.log, erro
 
   if (command === "install") {
     error("The custom downloader has been retired.");
-    error("Use `pi install npm:pi-mcp-adapter` instead, then optionally run `pi-mcp-adapter init`.");
+    error("请使用 `pi install npm:@liuser/pi-mcp-adapter` 安装，再按需运行 `pi-mcp-adapter init`。");
     return 1;
   }
 
