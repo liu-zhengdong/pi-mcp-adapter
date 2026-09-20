@@ -57,7 +57,7 @@ describe("package.json files", () => {
     const publishedFiles = new Set(packageJson.files ?? []);
 
     expect(packageJson.scripts?.prepare).toBeUndefined();
-    expect(packageJson.scripts?.prepack).toBe("npm run build:public");
+    expect(packageJson.scripts?.prepack).toBeUndefined();
     expect(publishedFiles.has("dist")).toBe(true);
     for (const entry of Object.values(packageJson.exports ?? {})) {
       if (!entry || typeof entry !== "object") continue;
